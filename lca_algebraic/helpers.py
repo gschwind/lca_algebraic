@@ -362,6 +362,7 @@ class ActivityExtended(Activity):
                 # Not 1 ?
                 if exch['amount'] != 1:
                     res = exch['amount']
+                    warn(f"WARNING: amount output is not 1.0 ({res})")
                 break
         return res
 
