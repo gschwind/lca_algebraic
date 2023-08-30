@@ -213,7 +213,7 @@ MethodId = Tuple[str, str, str]
 def _modelsToLambdas(models : List[ActivityExtended], methods : List[MethodId]) -> Dict[Tuple[ActivityExtended, MethodId], LambdaWithParamNames]:
     """
     Compile list of models (=activities) and methods (=impacts) to SymPy expression,
-    replacing the background activities by te values of the impacts
+    replacing the background activities by the values of the impacts
 
     :param models: List of activitiies
     :param methods: List of impact methods (tuples)
