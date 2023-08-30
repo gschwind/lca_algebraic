@@ -492,7 +492,13 @@ def actToExpression(
         act_symbols : Dict[str, Symbol] = dict()):
 
     """
-    Computes a symbolic expression of the model, referencing background activities and model parameters as symbols
+    Computes a symbolic expression of the impacts for given model,
+    referencing impacts of background activities and model parameters
+
+    This expresion does not depend on impact methods, because for all
+    methods, the final impact is a weighted sum of the impacts of each exchanges
+    of the given method.
+
     (sympy_expr, dict of symbol => activity)
     :param act: Activity
     :param act_symbols: Cache of activity -> Symbol (filled during this process)
