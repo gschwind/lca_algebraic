@@ -322,12 +322,12 @@ class LambdaWithParamNames :
         # Check and expand enum params, add default values
         res = _completeParamValues(params, self.params)
 
-        # Expand single params and transform them to np.array
-        for key in res.keys():
-            val = res[key]
-            if not isinstance(val, list):
-                val = list([val] * param_length)
-            res[key] = np.array(val, float)
+        # Check and Expand single params and transform them to np.array
+        for k, v in res.items():
+            if np.isscalar(v):
+                res[k] = np.tile(v, (param_length,))
+            else:
+                res[k] = np.asarray(v)
         return res
 
     def compute(self, **params):
