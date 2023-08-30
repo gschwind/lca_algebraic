@@ -1,9 +1,12 @@
 import concurrent.futures
 from collections import OrderedDict
 from typing import Tuple, Dict
+from copy import copy
 
 import itertools
 from pandas import DataFrame
+
+import sympy
 from sympy import lambdify, simplify, Function
 from sympy.printing.numpy import NumPyPrinter
 
@@ -131,6 +134,142 @@ def _multiLCAWithCache(acts, methods) :
 
 def _filter_param_values(params, expanded_param_names) :
     return {key : val for key, val in params.items() if key in expanded_param_names}
+
+def _lambdify_expr_to_variable_sequence(expr):
+    xid = 0
+    def _walk_expr(expr, stack = None):
+        nonlocal xid
+        stack = []
+        argn = []
+        for a in expr.args:
+            s = _walk_expr(a)
+            stack += s
+            argn.append(stack[-1][0])
+        name = f"_x_{xid}_x_"
+        xid += 1
+        if isinstance(expr, sympy.Symbol):
+            value = f'(kwargs["{expr.name}"])'
+        elif isinstance(expr, sympy.Number):
+            value = str(float(expr))
+        elif isinstance(expr, sympy.logic.boolalg.BooleanTrue):
+            value = "True"
+        elif isinstance(expr, sympy.logic.boolalg.BooleanFalse):
+            value = "False"
+        elif isinstance(expr, sympy.Tuple):
+            value = "("+",".join(argn)+")"
+        elif isinstance(expr, sympy.Pow):
+            value = "({}**{})".format(argn[0],argn[1])
+        elif isinstance(expr, sympy.Add):
+            value = "("+"+".join(argn)+")"
+        elif isinstance(expr, sympy.Mul):
+            value = "("+"*".join(argn)+")"
+        elif isinstance(expr, sympy.StrictGreaterThan):
+            value = "({}>{})".format(argn[0],argn[1])
+        elif isinstance(expr, sympy.core.numbers.Pi):
+            value = "np.pi"
+        elif isinstance(expr, sympy.Max):
+            value = "mymax("+",".join(argn)+")"
+        elif isinstance(expr, sympy.ceiling):
+            value = "np.ceil("+",".join(argn)+")"
+        elif isinstance(expr, sympy.Abs):
+            value = "np.fabs("+",".join(argn)+")"
+        else:
+            value = f"{expr.__class__.__name__}("+",".join(argn)+")"
+        stack.append((name, value, argn))
+        return stack
+    return _walk_expr(expr)
+
+def _merge_same_variable(data):
+    """Merge same expresion as unique variable"""
+    debug("Applying pass0: ", len(data))
+    # for k, v in data:
+    #     debug(k, v)
+    data = copy(data)
+
+    # index of line that use a given variable
+    # variable_name : list of line number
+    index = defaultdict(list)
+    for i, l in enumerate(data):
+        for a in l[2]:
+            index[a].append(i)
+
+    for i in range(len(data)):
+            if data[i] is None:
+                continue
+            for j in range(i+1, len(data)):
+                if data[j] is not None and data[j][1]==data[i][1]:
+                    t = data[j]
+                    data[j] = None
+                    # replace all occurence of variable data[j][0] by data[i][0]
+                    for k in index[t[0]]:
+                        if data[k] is None:
+                                continue
+                        data[k] = (data[k][0], re.sub(t[0], data[i][0], data[k][1]))
+                        # Update the index (Maybe not needed)
+                        index[data[i][0]].append(k)
+
+                    #for k in range(j+1, len(data)):
+                    #    if data[k] is None:
+                    #            continue
+                    #    data[k] = (data[k][0], re.sub(t[0], data[i][0], data[k][1]))
+    data = [x for x in data if x is not None]
+    debug("Finish pass0: ", len(data))
+    return data
+
+def _inline_only_once_used_variable(data):
+    """Inline variable that appear only once"""
+    debug("Applying pass1: ", len(data))
+    data = copy(data)
+    s = " ".join([x[1] for x in data if x is not None])
+    x = dict()
+    for i in range(len(data)):
+        if data[i] is None:
+            continue
+        n = data[i][0]
+        f = re.findall(n, s)
+        if len(f) == 1:
+            t = data[i]
+            # We cannot remove item from a list that we are using
+            # thus just replace removed item by None
+            data[i] = None
+            for k in range(i+1,len(data)):
+                if data[k] is None:
+                    continue
+                data[k] = (data[k][0],re.sub(t[0], t[1], data[k][1]))
+    data = [x for x in data if x is not None]
+    debug("Finish pass1: ", len(data))
+    return data
+
+def _generate_lambda_python_code(data):
+    s = []
+    s.append("def foo(**kwargs):\n")
+    for x in data:
+        if x is None:
+            continue
+        s.append("    "+x[0]+"="+x[1]+"\n")
+    s.append("    return "+data[-1][0]+"\n")
+    # for x in s:
+    #     print(x)
+    return s
+
+def _custom_lambdify(expr, user_functions):
+    pass0 = _lambdify_expr_to_variable_sequence(expr)
+    pass1 = _merge_same_variable(pass0)
+    pass2 = _inline_only_once_used_variable(pass1)
+    pass3 = _generate_lambda_python_code(pass2)
+
+    # Create locales variable for the lambda
+    # copy dictionnary to avoid changes in provided inputs
+    l = copy(user_functions)
+
+    # Create globals variables for the lambda
+    g = copy(globals())
+    g.update(user_functions)
+
+    exec(compile("".join(pass3), 'lamdba.tmp.py', 'exec', optimize=2), g, l)
+
+    # Return the generated functions from updated globals
+    return l["foo"]
 
 class LambdaWithParamNames :
     """
