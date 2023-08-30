@@ -284,14 +284,12 @@ def _slugify(str) :
 
 def _compute_param_length(params) :
     # Check length of parameter values
-    param_length = 1
-    for key, val in params.items():
-        if isinstance(val, list):
-            if param_length == 1:
-                param_length = len(val)
-            elif param_length != len(val):
-                raise Exception("Parameters should be a single value or a list of same number of values")
-    return param_length
+    params_length_list = [len(np.asarray(x)) for x in params.values() if len(np.asarray(x)) != 1]
+    if len(params_length_list) < 2:
+        return 1
+    if not all([a == b for a, b in zip(params_length_list[:-1],params_length_list[1:])]):
+        raise Exception("Parameters should be a single value or a list of same number of values")
+    return params_length_list[0]
 
 
 def _applyParams(lambd, params) :
