@@ -590,8 +590,7 @@ def actToExpression(act: Activity, extract_activities=None):
         db_name, code = sub_act.key
 
         # Look in cache
-        if not (db_name, code) in act_symbols:
-
+        if (db_name, code) not in act_symbols:
             act = _getDb(db_name).get(code)
             name = act['name']
             base_slug = _slugify(name)
