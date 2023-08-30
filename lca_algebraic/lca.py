@@ -4,6 +4,7 @@ from typing import Dict, List
 from copy import copy
 
 import itertools
+import brightway2 as bw
 import sympy
 from sympy import lambdify, simplify, Function
 from sympy.printing.numpy import NumPyPrinter
@@ -101,12 +102,51 @@ def multiLCA(models, methods, **params):
 
 # Cache of (act, method) => values
 _BG_IMPACTS_CACHE = dict()
+_BG_IMPACTS_CACHE_DB_STATUS = dict()
+
+# Store current database status, i.e. modified and processed timestamp
+def _storeDBStatus():
+    global _BG_IMPACTS_CACHE_DB_STATUS
+    _BG_IMPACTS_CACHE_DB_STATUS = dict()
+    for k, v in bw.databases.items():
+        _BG_IMPACTS_CACHE_DB_STATUS[k] = {
+            'modified': v['modified'],
+            'processed': v['processed']
+        }
+
+# Check if any change has occured since last update of the cache
+def _DBHasChanged():
+    global _BG_IMPACTS_CACHE_DB_STATUS
+
+    # The set of databases has changed ?
+    if set(bw.databases) != set(_BG_IMPACTS_CACHE_DB_STATUS):
+        return True
+
+    # Metadata has changed ?
+    for k0, d0 in _BG_IMPACTS_CACHE_DB_STATUS.items():
+        d1 = bw.databases[k0]
+        for k in d0:
+            if d0[k] != d1[k]:
+                return True
+
+    return False
 
 def _clearLCACache() :
+    _storeDBStatus()
     _BG_IMPACTS_CACHE.clear()
+
+def forceClearLCACache():
+    _clearLCACache()
 
 """ Compute LCA and return (act, method) => value """
 def _multiLCAWithCache(acts, methods) :
+    """ Compute LCA and return (act, method) => value """
+
+    # Flush all pending data if any
+    bw.databases.clean()
+
+    if _DBHasChanged():
+        _clearLCACache()
 
     # List activities with at least one missing value
     remaining_acts_methods = set(itertools.product(acts, methods))-set(_BG_IMPACTS_CACHE)
