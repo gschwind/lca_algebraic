@@ -36,6 +36,9 @@ def error(*args, **kwargs):
     """Print message on stderr """
     print(*args, **kwargs, file=stderr)
 
+def warn(*args, **kwargs):
+    """Print message on stderr """
+    print(*args, **kwargs, file=stderr)
 
 def _isOutputExch(exc) :
     return exc.get('input') == exc.get('output') or exc.get("type") == "production"
