@@ -216,7 +216,7 @@ class StochasticMethod :
 
 
 def _stochastics(
-        modelOrLambdas, methods, n=1000,
+        modelOrLambdas, methods, n=2**12,
         var_params=None, sample_method=StochasticMethod.SALTELLI,
         **extra_fixed_params):
 
