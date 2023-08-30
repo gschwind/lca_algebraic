@@ -409,7 +409,7 @@ def _createTechProxyForBio(act_key, target_db):
     act = _getDb(dbname).get(code)
 
     # Biosphere ?
-    if (dbname == BIOSPHERE3_DB_NAME) or ("type" in act and act["type"] in ["emission", "natural resource"]) :
+    if (dbname == BIOSPHERE3_DB_NAME) or ("type" in act and act["type"] in {"emission", "natural resource"}) :
 
         code_to_find = code + "#asTech"
 
