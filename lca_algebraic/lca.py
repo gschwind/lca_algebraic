@@ -68,6 +68,7 @@ def set_custom_impact_labels(impact_labels:Dict) :
 def _multiLCA(activities, methods):
     """Simple wrapper around brightway API"""
     bw.calculation_setups['process'] = {'inv': activities, 'ia': methods}
+    debug(f"Compute LCA for {len(activities)} activities and {len(methods)} methods")
     lca = bw.MultiLCA('process')
     cols = [_actName(act) for act_amount in activities for act, amount in act_amount.items()]
     return pd.DataFrame(lca.results.T, index=[method_name(method) for method in methods], columns=cols)
