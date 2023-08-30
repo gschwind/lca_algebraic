@@ -2,6 +2,7 @@ import concurrent.futures
 from collections import OrderedDict
 from typing import Dict, List
 
+import itertools
 from sympy import lambdify, simplify, Function
 from sympy.printing.numpy import NumPyPrinter
 
@@ -105,7 +106,8 @@ def _clearLCACache() :
 def _multiLCAWithCache(acts, methods) :
 
     # List activities with at least one missing value
-    remaining_acts = list(act for act in acts if any(method for method in methods if (act, method) not in _BG_IMPACTS_CACHE))
+    remaining_acts_methods = set(itertools.product(acts, methods))-set(_BG_IMPACTS_CACHE)
+    remaining_acts = list(set(x[0] for x in remaining_acts_methods))
 
     if (len(remaining_acts) > 0) :
         lca = _multiLCA(
