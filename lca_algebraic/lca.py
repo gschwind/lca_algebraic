@@ -482,6 +482,7 @@ def actToExpression(act: Activity, extract_activities=None):
 
             if isinstance(formula, types.FunctionType):
                 # Some amounts in EIDB are functions ... we ignore them
+                warn("WARNING: Some amounts in EIDB are functions!")
                 continue
 
             #  Production exchange
