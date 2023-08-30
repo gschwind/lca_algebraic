@@ -465,7 +465,7 @@ def actToExpression(act: Activity, extract_activities=None):
 
         return act_symbols[(db_name, code)]
 
-    def rec_func(act: Activity, in_extract_path, parents=[]):
+    def rec_func(act: Activity, in_extract_path, visited : frozenset = frozenset()):
 
         res = 0
         outputAmount = act.getOutputAmount()
@@ -508,11 +508,11 @@ def actToExpression(act: Activity, extract_activities=None):
             # Our model : recursively it to a symbolic expression
             else:
 
-                parents = parents + [act]
-                if sub_act in parents :
-                    raise Exception("Found recursive activities : " + ", ".join(_actName(act) for act in (parents + [sub_act])))
+                visited = visited|{act}
+                if sub_act in visited :
+                    raise Exception("Found recursive activities : " + ", ".join(_actName(act) for act in visited))
 
-                act_expr = rec_func(sub_act, exch_in_path, parents)
+                act_expr = rec_func(sub_act, exch_in_path, visited)
 
             avoidedBurden = 1
 
