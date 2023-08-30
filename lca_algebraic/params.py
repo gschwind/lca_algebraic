@@ -176,6 +176,9 @@ class ParamDef(Symbol):
         self.distrib = distrib
         self.dbname = dbname
 
+        if "latex_symbol" in kwargs:
+            self.latex_symbol = kwargs["latex_symbol"]
+
         if (self.dbname == None) :
             error("Warning : param '%s' linked to root project instead of a specific DB" % self.name)
 
