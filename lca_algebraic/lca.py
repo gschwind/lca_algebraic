@@ -313,11 +313,12 @@ class LambdaWithParamNames :
     """
     This class represents a compiled (lambdified) expression together with the list of requirement parameters and the source expression
     """
+    _use_internal_optimization = False
+
     def __init__(self, exprOrDict, expanded_params=None, params=None, sobols=None):
         """ Computes a lamdda function from expression and list of expected parameters.
         you can provide either the list pf expanded parameters (full vars for enums) for the 'user' param names
         """
-
         printer = NumPyPrinter({
             'fully_qualified_modules': False,
             'inline': True,
@@ -337,7 +338,14 @@ class LambdaWithParamNames :
             self.expanded_params = _expand_param_names(self.params)
             local_dict = {x[0].name: x[0] for x in _user_functions.values()}
             self.expr = parse_expr(obj["expr"], local_dict=local_dict)
-            self.lambd = lambdify(self.expanded_params, self.expr, modules, printer=printer)
+
+            if LambdaWithParamNames._use_internal_optimization:
+                user_functions = {x[0].name : x[1] for x in _user_functions.values()}
+                self.lambd = _custom_lambdify(self.expr, user_functions)
+            else:
+                # Sympy regular lambdify
+                self.lambd = lambdify(self.expanded_params, self.expr, modules, printer=printer)
+
             self.sobols = obj["sobols"]
 
         else :
@@ -349,7 +357,13 @@ class LambdaWithParamNames :
             if self.params is None :
                 self.params = _expanded_names_to_names(expanded_params)
 
-            self.lambd = lambdify(expanded_params, self.expr, modules, printer=printer)
+            if LambdaWithParamNames._use_internal_optimization:
+                user_functions = {x[0].name : x[1] for x in _user_functions.values()}
+                self.lambd = _custom_lambdify(self.expr, user_functions)
+            else:
+                # Sympy regular lambdify
+                self.lambd = lambdify(expanded_params, self.expr, modules, printer=printer)
+
             self.expanded_params = expanded_params
             self.sobols = sobols
 
@@ -373,6 +387,10 @@ class LambdaWithParamNames :
         # Filter on required parameters
         params = _filter_param_values(params, self.expanded_params)
         return self.lambd(**params)
+
+    @staticmethod
+    def use_internal_optimization(b = True):
+        LambdaWithParamNames._use_internal_optimization = b
 
     def serialize(self) :
         return dict(
