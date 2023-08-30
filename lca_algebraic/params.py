@@ -297,7 +297,7 @@ class ParamDef(Symbol):
 
     # Expand parameter (useful for enum param)
     def expandParams(self, value=None) -> Dict[str, float]:
-        if value == None:
+        if value is None:
             value = self.default
         return {self.name: value}
 
