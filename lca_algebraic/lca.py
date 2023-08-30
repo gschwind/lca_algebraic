@@ -245,8 +245,8 @@ def _modelsToLambdas(models : List[ActivityExtended], methods : List[MethodId]) 
             expr = expr_by_act[model]
 
             # Compute the required params
-            free_names = set([str(symb) for symb in expr.free_symbols])
-            act_names = set([str(symb) for symb in symbol_by_act.values()])
+            free_names = {str(symb) for symb in expr.free_symbols}
+            act_names = {str(symb) for symb in symbol_by_act.values()}
             expected_names = free_names - act_names
 
             # If we expect an enum param name, we also expect the other ones : enumparam_val1 => enumparam_val1, enumparam_val2, ...
@@ -256,7 +256,7 @@ def _modelsToLambdas(models : List[ActivityExtended], methods : List[MethodId]) 
             for method in methods:
 
                 # Replace activities by their value in expression for this method
-                sub = dict({symbol: lcas[(act, method)] for symbol, act in acts_by_name.items()})
+                sub = {symbol: lcas[(act, method)] for symbol, act in acts_by_name.items()}
 
                 res[(model, method)] = LambdaWithParamNames(
                     expr.xreplace(sub),
