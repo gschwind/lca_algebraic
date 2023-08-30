@@ -47,13 +47,9 @@ def _isOutputExch(exc) :
 def _isnumber(value):
     return isinstance(value, int) or isinstance(value, float)
 
-dbs = dict()
 def _getDb(dbname) -> bw.Database:
     """Pool of Database instances"""
-    if not dbname in dbs:
-        dbs[dbname] = bw.Database(dbname)
-    return dbs[dbname]
-
+    return bw.Database(dbname)
 
 def interpolate(x, x1, x2, y1, y2):
     """Build an expression for linear interpolation between two points.
