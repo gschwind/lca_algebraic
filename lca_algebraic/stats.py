@@ -15,19 +15,10 @@ from sympy import Float, Number, Add, AtomicExpr, Mul, Expr, Abs, Sum, Eq, Piece
 from sympy.core.operations import AssocOp
 
 from .base_utils import _method_unit
+from .base_utils import _concurent_map
 from .lca import *
 from .lca import _expanded_names_to_names, _filter_param_values, _replace_fixed_params, _modelToLambdas, _postMultiLCAAlgebric
 from .params import _variable_params, _param_registry, FixedParamMode, _param_name
-
-PARALLEL=False
-
-def _parallel_map(f, items) :
-    if PARALLEL :
-        with concurrent.futures.ThreadPoolExecutor() as exec:
-            return exec.map(f, items)
-    else :
-        return map(f, items)
-
 
 def _heatmap(df, title, vmax, ints=False):
     ''' Produce heatmap of a dataframe'''
@@ -306,7 +297,7 @@ def _sobols(methods, problem, Y) -> SobolResults :
         res = sobol.analyze(problem, y.to_numpy(), calc_second_order=True)
         return imethod, res
 
-    for imethod, res in _parallel_map(process, enumerate(methods)):
+    for imethod, res in _concurent_map(process, enumerate(methods)):
         try:
             s1[:, imethod] = res["S1"]
             s1_conf[:, imethod] = res["S1_conf"]

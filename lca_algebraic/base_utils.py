@@ -12,6 +12,8 @@ from IPython.core.display import display
 import numpy as np
 import os
 
+import concurrent.futures
+
 DEBUG=False
 LANG="fr"
 UNIT_OVERRIDE = dict()
@@ -164,3 +166,18 @@ def with_output(out):
                 return func(*args, **kwargs)
         return wrapper
     return decorator
+
+
+_PARALLEL=False
+
+def set_parallel(b : bool = True):
+    global _PARALLEL
+    _PARALLEL = b
+
+def _concurent_map(f, items) :
+    global _PARALLEL
+    if PARALLEL:
+        with concurrent.futures.ThreadPoolExecutor() as exec:
+            return exec.map(f, items)
+    else:
+        return map(f, items)

@@ -1,4 +1,3 @@
-import concurrent.futures
 from collections import OrderedDict
 from typing import Tuple, Dict
 from copy import copy
@@ -14,6 +13,7 @@ from sympy.printing.numpy import NumPyPrinter
 from .base_utils import _actName, _getDb, _method_unit
 from .base_utils import _getAmountOrFormula
 from .base_utils import _user_functions
+from .base_utils import _concurent_map
 from .helpers import *
 from .helpers import _isForeground
 from .params import _param_registry, _completeParamValues, _fixed_params, _expanded_names_to_names, _expand_param_names
@@ -527,9 +527,8 @@ def _postMultiLCAAlgebric(methods, lambdas, **params):
         return (imethod, _applyParams(lambd, params))
 
     # Use multithread for that
-    with concurrent.futures.ThreadPoolExecutor() as exec:
-        for imethod, value in exec.map(process, enumerate(lambdas)):
-            res[imethod, :] = value
+    for imethod, value in _concurent_map(process, enumerate(lambdas)):
+        res[imethod, :] = value
 
     return pd.DataFrame(
         res,
