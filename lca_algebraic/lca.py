@@ -406,6 +406,45 @@ class LambdaWithParamNames :
     def _repr_latex_(self):
         return self.expr._repr_latex_()
 
+
+def lambdify_expr(model, method, expr):
+    """Return the lambdified expr within the model context
+    
+    The expr must appear within the model.
+    """
+
+    # Cache of (db, key) => symbol name
+    symbol_by_act = dict()
+    expr_by_act = dict()
+    res = dict()
+
+    # Generate expressions for all models
+    expr_by_act[model] = actToExpression(model, symbol_by_act)
+
+    # Create tech proxys if necessary (for bio flux)
+    acts_by_name = {symbol: _createTechProxyForBio(act, act[0]) for act, symbol in symbol_by_act.items()}
+
+    # Compute LCA for all background activities
+    lcas = _multiLCAWithCache(
+        acts_by_name.values(),
+        [method])
+
+    # Loop on models
+    with DbContext(model) :
+        # Compute the required params
+        free_names = {str(symb) for symb in expr.free_symbols}
+        act_names = {str(symb) for symb in symbol_by_act.values()}
+        expected_names = free_names - act_names
+
+        # If we expect an enum param name, we also expect the other ones : enumparam_val1 => enumparam_val1, enumparam_val2, ...
+        expected_names = _expand_param_names(_expanded_names_to_names(expected_names))
+
+        # Replace activities by their value in expression for this method
+        sub = {symbol: lcas[(act, method)] for symbol, act in acts_by_name.items()}
+
+        return LambdaWithParamNames(expr.xreplace(sub), expected_names)
+
+
 MethodId = Tuple[str, str, str]
 
 def _modelsToLambdas(models : List[ActivityExtended], methods : List[MethodId]) -> Dict[Tuple[ActivityExtended, MethodId], LambdaWithParamNames]:
