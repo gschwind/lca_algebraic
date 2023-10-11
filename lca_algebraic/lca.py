@@ -521,7 +521,7 @@ def _slugify(str) :
 
 def _compute_param_length(params) :
     # Check length of parameter values
-    params_length_list = [len(np.asarray(x)) for x in params.values() if len(np.asarray(x)) != 1]
+    params_length_list = [np.asarray(x).size for x in params.values() if np.asarray(x).size != 1]
     if len(params_length_list) < 2:
         return 1
     if not all([a == b for a, b in zip(params_length_list[:-1],params_length_list[1:])]):
