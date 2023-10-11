@@ -18,6 +18,7 @@ from .helpers import *
 from .helpers import _isForeground
 from .params import _param_registry, _completeParamValues, _fixed_params, _expanded_names_to_names, _expand_param_names
 from ipywidgets import Output
+from itertools import product
 
 def register_user_function(sym, func):
     """Register a custom function with is python implementation
@@ -141,7 +142,39 @@ def _clearLCACache() :
 def forceClearLCACache():
     _clearLCACache()
 
-""" Compute LCA and return (act, method) => value """
+
+
+def _ensure_tech_activity_proxy(act_key, target_db):
+    """
+        We cannot reference directly biosphere in the model, since LCA can only be applied to products
+        We create a dummy activity in our DB, with same code, and single exchange of amount '1'
+    """
+    dbname, code = act_key
+    act = _getDb(dbname).get(code)
+
+    # Biosphere ?
+    if (dbname == BIOSPHERE3_DB_NAME) or ("type" in act and act["type"] in {"emission", "natural resource"}) :
+
+        code_to_find = code + "#asTech"
+
+        try:
+            # Already created ?
+            return _getDb(target_db).get(code_to_find)
+        except:
+            name = act['name'] + ' # asTech'
+
+            # Create biosphere proxy in User Db
+            res = newActivity(target_db, name, act['unit'], {act: 1},
+                              code=code_to_find,
+                              isProxy=True) # add a this flag to distinguish this dummy activity from others
+            return res
+    else :
+        return act
+
+_createTechProxyForBio = _ensure_tech_activity_proxy
+
+
+
 def _multiLCAWithCache(acts, methods) :
     """ Compute LCA and return (act, method) => value """
 
@@ -151,14 +184,20 @@ def _multiLCAWithCache(acts, methods) :
     if _DBHasChanged():
         _clearLCACache()
 
+
     # List activities with at least one missing value
-    remaining_acts_methods = set(itertools.product(acts, methods))-set(_BG_IMPACTS_CACHE)
+    remaining_acts_methods = set(product(acts, methods))-set(_BG_IMPACTS_CACHE)
+    
+    # Keep unique activites
     remaining_acts = list(set(x[0] for x in remaining_acts_methods))
 
     if (len(remaining_acts) > 0) :
         debug("remaining act", remaining_acts, methods)
+        
+        # Some activity belong biosphere and cannot be computed, thus create
+        # a proxy activities to compute them.
         lca = _multiLCA(
-            [{act: 1} for act in remaining_acts],
+            [{_ensure_tech_activity_proxy(act, act[0]): 1} for act in remaining_acts],
             methods)
 
         # Set output from dataframe
@@ -407,80 +446,188 @@ class LambdaWithParamNames :
         return self.expr._repr_latex_()
 
 
-def lambdify_expr(model, method, expr):
-    """Return the lambdified expr within the model context
-    
-    The expr must appear within the model.
-    """
-
-    # Cache of (db, key) => symbol name
-    symbol_by_act = dict()
-    expr_by_act = dict()
-    res = dict()
-
-    # Generate expressions for all models
-    expr_by_act[model] = actToExpression(model, symbol_by_act)
-
-    # Create tech proxys if necessary (for bio flux)
-    acts_by_name = {symbol: _createTechProxyForBio(act, act[0]) for act, symbol in symbol_by_act.items()}
-
-    # Compute LCA for all background activities
-    lcas = _multiLCAWithCache(
-        acts_by_name.values(),
-        [method])
-
-    # Loop on models
-    with DbContext(model) :
-        # Compute the required params
-        free_names = {str(symb) for symb in expr.free_symbols}
-        act_names = {str(symb) for symb in symbol_by_act.values()}
-        expected_names = free_names - act_names
-
-        # If we expect an enum param name, we also expect the other ones : enumparam_val1 => enumparam_val1, enumparam_val2, ...
-        expected_names = _expand_param_names(_expanded_names_to_names(expected_names))
-
-        # Replace activities by their value in expression for this method
-        sub = {symbol: lcas[(act, method)] for symbol, act in acts_by_name.items()}
-
-        return LambdaWithParamNames(expr.xreplace(sub), expected_names)
 
 
 MethodId = Tuple[str, str, str]
 
-def _modelsToLambdas(models : List[ActivityExtended], methods : List[MethodId]) -> Dict[Tuple[ActivityExtended, MethodId], LambdaWithParamNames]:
-    """
-    Compile list of models (=activities) and methods (=impacts) to SymPy expression,
-    replacing the background activities by the values of the impacts
 
-    :param models: List of activitiies
-    :param methods: List of impact methods (tuples)
-    :return: dict of (model, method) => LambdaWithParamNames
-    """
+class get_lambda_for_models_with_methods:
 
-    # Cache of (db, key) => symbol name
-    symbol_by_act = dict()
-    expr_by_act = dict()
-    res = dict()
+    # Store lambdas (model, method) -> LambdaWithParamNames
+    _lambdas_cache = dict()
 
-    # Generate expressions for all models
-    for model in models :
-        expr_by_act[model] = actToExpression(model, symbol_by_act)
+    # Store activity symbols Activity to sympy.Symbol
+    _activity_symbols = dict()
 
-    # Create tech proxys if necessary (for bio flux)
-    acts_by_name = {symbol: _createTechProxyForBio(act, act[0]) for act, symbol in symbol_by_act.items()}
+    # Store activity expr
+    _actitity_expr = dict()
 
-    # Compute LCA for all background activities
-    lcas = _multiLCAWithCache(
-        acts_by_name.values(),
-        methods)
+    @classmethod
+    def clear_cache(cls):
+        cls._lambdas_cache.clear()
+        cls._activity_symbols.clear()
+        cls._actitity_expr.clear()
 
-    # Loop on models
-    for model in models :
+    def __new__(cls, models, methods) -> LambdaWithParamNames :
+        """
+        Compile list of models (=activities) and methods (=impacts) to SymPy expression,
+        replacing the background activities by the values of the impacts
 
+        :param models: List of activitiies
+        :param methods: List of impact methods (tuples)
+        :return: dict of (model, method) => LambdaWithParamNames
+        """
+      
+        # pre-generate model expression to extract all possible _activity_symbols
+        for model in models:
+            cls.get_activity_expr(model)
+
+        # Compute LCA for all background activities
+        lcas = _multiLCAWithCache(cls._activity_symbols.keys(), methods)
+
+        ret = dict()
+        for model, method in product(models, methods) :
+
+            if (model, method) not in cls._lambdas_cache:
+
+                expr = cls.get_activity_expr(model)
+    
+                # Compute the required params
+                lca_parameters = set(expr.free_symbols)-set(cls._activity_symbols.values())
+                expected_names = set(map(str, lca_parameters))
+
+                # If we expect an enum param name, we also expect the other ones : enumparam_val1 => enumparam_val1, enumparam_val2, ...
+                expected_names = _expand_param_names(_expanded_names_to_names(expected_names))
+
+                # Collect impact values for symbols of activities
+                sub = {s: lcas[(a, method)] for a, s in cls._activity_symbols.items()}
+
+                # Create lambda that replace symbols of activities by their values
+                cls._lambdas_cache[(model, method)] = LambdaWithParamNames(expr.xreplace(sub), expected_names)
+        
+            ret[(model, method)] = cls._lambdas_cache[(model, method)]
+
+        return ret
+
+    @classmethod
+    def get_activity_symbol(cls, activity : Activity):
+        """ Transform an activity to a named symbol and keep cache of it """
+
+        db_name, code = activity.key
+
+        # Look in cache
+        if (db_name, code) not in cls._activity_symbols:
+            act = _getDb(db_name).get(code)
+            slug = _slugify(act['name'])
+
+            # Ensure unique symbols
+            s = symbols(f"{slug}_{len(cls._activity_symbols)}")
+            cls._activity_symbols[(db_name, code)] = s
+
+        return cls._activity_symbols[(db_name, code)]
+
+    @classmethod
+    def _get_activity_expr(cls, act: Activity, visited : set = set()):
+        res = 0
+
+        with DbContext(act.key[0]):
+            outputAmount = act.getOutputAmount()
+
+            if not _isForeground(act["database"]) :
+                # We reached a background DB ? => stop developping and create reference to activity
+                return cls.get_activity_symbol(act)
+
+            for exch in act.exchanges():
+
+                formula = _getAmountOrFormula(exch)
+
+                if isinstance(formula, types.FunctionType):
+                    # Some amounts in EIDB are functions ... we ignore them
+                    warn("WARNING: Some amounts in EIDB are functions!")
+                    continue
+
+                #  Production exchange
+                if exch['input'] == exch['output']:
+                    continue
+
+                input_db, input_code = exch['input']
+                sub_act = _getDb(input_db).get(input_code)
+
+                # Background DB => reference it as a symbol
+                if not _isForeground(input_db) :
+
+                    # Add to dict of background symbols
+                    act_expr = cls.get_activity_symbol(sub_act)
+
+                # Our model : recursively it to a symbolic expression
+                else:
+
+                    visited = visited|{act}
+                    if sub_act in visited :
+                        raise Exception("Found recursive activities : " + ", ".join(_actName(act) for act in visited))
+
+                    act_expr = cls._get_activity_expr(sub_act, visited)
+
+                avoidedBurden = 1
+
+                if exch.get('type') == 'production' and not exch.get('input') == exch.get('output') :
+                    debug("Avoided burden", exch[name])
+                    avoidedBurden = -1
+
+                #debug("adding sub act : ", sub_act, formula, act_expr)
+
+                res += formula * act_expr * avoidedBurden
+
+            return res / outputAmount
+
+    @classmethod
+    def get_activity_expr(cls, act: Activity):
+        """
+        Computes a symbolic expression of the impacts for given model,
+        referencing impacts of background activities and model parameters
+
+        This expresion does not depend on impact methods, because for all
+        methods, the final impact is a weighted sum of the impacts of each exchanges
+        of the given method.
+
+        (sympy_expr, dict of symbol => activity)
+        :param act: Activity
+        :param act_symbols: Cache of activity -> Symbol (filled during this process)
+        :return: Sympy expression
+        """
+
+        if act.key not in cls._actitity_expr:
+            with DbContext(act.key[0]):
+                expr = cls._get_activity_expr(act)
+                if isinstance(expr, float) :
+                    expr = simplify(expr)
+                else:
+                    # Replace fixed params with their default value
+                    expr = _replace_fixed_params(expr, _fixed_params().values())
+            cls._actitity_expr[act.key] = expr
+
+        return cls._actitity_expr[act.key]
+
+    @classmethod
+    def lambdify_expr(cls, model, method, expr):
+        """Return the lambdified expr within the model context
+
+        The expr must appear within the model.
+        """
+
+        # Create tech proxys if necessary (for bio flux)
+        acts_by_name = {symbol: (act, act[0]) for act, symbol in cls._activity_symbols.items()}
+
+        # Compute LCA for all background activities
+        lcas = _multiLCAWithCache(
+            acts_by_name.values(),
+            [method])
+
+        # Replace activities by their value in expression for this method
+        sub = {symbol: lcas[(act, method)] for symbol, act in cls._activity_symbols.items()}
+
+        # Loop on models
         with DbContext(model) :
-
-            expr = expr_by_act[model]
-
             # Compute the required params
             free_names = {str(symb) for symb in expr.free_symbols}
             act_names = {str(symb) for symb in symbol_by_act.values()}
@@ -489,17 +636,7 @@ def _modelsToLambdas(models : List[ActivityExtended], methods : List[MethodId]) 
             # If we expect an enum param name, we also expect the other ones : enumparam_val1 => enumparam_val1, enumparam_val2, ...
             expected_names = _expand_param_names(_expanded_names_to_names(expected_names))
 
-            # Loop on impact methods and replace background activities by their values
-            for method in methods:
-
-                # Replace activities by their value in expression for this method
-                sub = {symbol: lcas[(act, method)] for symbol, act in acts_by_name.items()}
-
-                res[(model, method)] = LambdaWithParamNames(
-                    expr.xreplace(sub),
-                    expected_names)
-
-    return res
+            return LambdaWithParamNames(expr.xreplace(sub), expected_names)
 
 
 def _modelToLambdas(model: ActivityExtended, methods):
@@ -507,8 +644,9 @@ def _modelToLambdas(model: ActivityExtended, methods):
     Wraps _modelsToLambdas for a single model, returning a list of lambda function in the same order as methods.
     """
     with DbContext(model) :
-        res = _modelsToLambdas([model], methods)
+        res = get_lambda_for_models_with_methods([model], methods)
         return list(res[(model, method)] for method in methods)
+
 
 def method_name(method):
     """Return name of method, taking into account custom label set via set_custom_impact_labels(...) """
@@ -639,7 +777,7 @@ def multiLCAAlgebric(
 
             debug("computing : ", model)
 
-    lambdas_per_model_method = _modelsToLambdas(models.keys(), methods)
+    lambdas_per_model_method = get_lambda_for_models_with_methods(models.keys(), methods)
 
     param_length = _compute_param_length(params)
 
@@ -689,32 +827,6 @@ def multiLCAAlgebric(
         return DataFrame.from_dict(res)
 
 
-def _createTechProxyForBio(act_key, target_db):
-    """
-        We cannot reference directly biosphere in the model, since LCA can only be applied to products
-        We create a dummy activity in our DB, with same code, and single exchange of amount '1'
-    """
-    dbname, code = act_key
-    act = _getDb(dbname).get(code)
-
-    # Biosphere ?
-    if (dbname == BIOSPHERE3_DB_NAME) or ("type" in act and act["type"] in {"emission", "natural resource"}) :
-
-        code_to_find = code + "#asTech"
-
-        try:
-            # Already created ?
-            return _getDb(target_db).get(code_to_find)
-        except:
-            name = act['name'] + ' # asTech'
-
-            # Create biosphere proxy in User Db
-            res = newActivity(target_db, name, act['unit'], {act: 1},
-                              code=code_to_find,
-                              isProxy=True) # add a this flag to distinguish this dummy activity from others
-            return res
-    else :
-        return act
 
 
 def _replace_fixed_params(expr, fixed_params, fixed_mode=FixedParamMode.DEFAULT) :
@@ -722,108 +834,6 @@ def _replace_fixed_params(expr, fixed_params, fixed_mode=FixedParamMode.DEFAULT)
     sub = {symbols(key): val for param in fixed_params for key, val in param.expandParams(param.stat_value(fixed_mode)).items()}
     return expr.xreplace(sub)
 
-@with_db_context(arg="act")
-def actToExpression(
-        act: Activity,
-        act_symbols : Dict[str, Symbol] = dict()):
-
-    """
-    Computes a symbolic expression of the impacts for given model,
-    referencing impacts of background activities and model parameters
-
-    This expresion does not depend on impact methods, because for all
-    methods, the final impact is a weighted sum of the impacts of each exchanges
-    of the given method.
-
-    (sympy_expr, dict of symbol => activity)
-    :param act: Activity
-    :param act_symbols: Cache of activity -> Symbol (filled during this process)
-    :return: Sympy expression
-    """
-
-    def act_to_symbol(sub_act):
-        """ Transform an activity to a named symbol and keep cache of it """
-
-        db_name, code = sub_act.key
-
-        # Look in cache
-        if (db_name, code) not in act_symbols:
-            act = _getDb(db_name).get(code)
-            name = act['name']
-            base_slug = _slugify(name)
-
-            slug = base_slug
-            i = 1
-            while symbols(slug) in act_symbols.values():
-                slug = f"{base_slug}{i}"
-                i += 1
-
-            act_symbols[(db_name, code)] = symbols(slug)
-
-        return act_symbols[(db_name, code)]
-
-    def rec_func(act: Activity, visited : set = set()):
-
-        res = 0
-        outputAmount = act.getOutputAmount()
-
-        if not _isForeground(act["database"]) :
-            # We reached a background DB ? => stop developping and create reference to activity
-            return act_to_symbol(act)
-
-        for exch in act.exchanges():
-
-            formula = _getAmountOrFormula(exch)
-
-            if isinstance(formula, types.FunctionType):
-                # Some amounts in EIDB are functions ... we ignore them
-                warn("WARNING: Some amounts in EIDB are functions!")
-                continue
-
-            #  Production exchange
-            if exch['input'] == exch['output']:
-                continue
-
-            input_db, input_code = exch['input']
-            sub_act = _getDb(input_db).get(input_code)
-
-
-            # Background DB => reference it as a symbol
-            if not _isForeground(input_db) :
-
-                # Add to dict of background symbols
-                act_expr = act_to_symbol(sub_act)
-
-            # Our model : recursively it to a symbolic expression
-            else:
-
-                visited = visited|{act}
-                if sub_act in visited :
-                    raise Exception("Found recursive activities : " + ", ".join(_actName(act) for act in visited))
-
-                act_expr = rec_func(sub_act, visited)
-
-            avoidedBurden = 1
-
-            if exch.get('type') == 'production' and not exch.get('input') == exch.get('output') :
-                debug("Avoided burden", exch[name])
-                avoidedBurden = -1
-
-            #debug("adding sub act : ", sub_act, formula, act_expr)
-
-            res += formula * act_expr * avoidedBurden
-
-        return res / outputAmount
-
-    expr = rec_func(act)
-
-    if isinstance(expr, float) :
-        expr = simplify(expr)
-    else:
-        # Replace fixed params with their default value
-        expr = _replace_fixed_params(expr, _fixed_params().values())
-
-    return expr
 
 
 def _reverse_dict(dic):
