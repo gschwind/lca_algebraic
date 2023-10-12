@@ -822,7 +822,7 @@ def multiLCAAlgebric(
                         res[col][row] = values
 
     if raw :
-        return res
+        return dict(res)
     else:
         return DataFrame.from_dict(res)
 
