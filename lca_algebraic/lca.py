@@ -103,47 +103,6 @@ def multiLCA(models, methods, **params):
     return _multiLCA(activities, methods).transpose()
 
 
-
-# Cache of (act, method) => values
-_BG_IMPACTS_CACHE = dict()
-_BG_IMPACTS_CACHE_DB_STATUS = dict()
-
-# Store current database status, i.e. modified and processed timestamp
-def _storeDBStatus():
-    global _BG_IMPACTS_CACHE_DB_STATUS
-    _BG_IMPACTS_CACHE_DB_STATUS = dict()
-    for k, v in bw.databases.items():
-        _BG_IMPACTS_CACHE_DB_STATUS[k] = {
-            'modified': v['modified'],
-            'processed': v['processed']
-        }
-
-# Check if any change has occured since last update of the cache
-def _DBHasChanged():
-    global _BG_IMPACTS_CACHE_DB_STATUS
-
-    # The set of databases has changed ?
-    if set(bw.databases) != set(_BG_IMPACTS_CACHE_DB_STATUS):
-        return True
-
-    # Metadata has changed ?
-    for k0, d0 in _BG_IMPACTS_CACHE_DB_STATUS.items():
-        d1 = bw.databases[k0]
-        for k in d0:
-            if d0[k] != d1[k]:
-                return True
-
-    return False
-
-def _clearLCACache() :
-    _storeDBStatus()
-    _BG_IMPACTS_CACHE.clear()
-
-def forceClearLCACache():
-    _clearLCACache()
-
-
-
 def _ensure_tech_activity_proxy(act_key, target_db):
     """
         We cannot reference directly biosphere in the model, since LCA can only be applied to products
@@ -174,45 +133,9 @@ def _ensure_tech_activity_proxy(act_key, target_db):
 _createTechProxyForBio = _ensure_tech_activity_proxy
 
 
-
-def _multiLCAWithCache(acts, methods) :
-    """ Compute LCA and return (act, method) => value """
-
-    # Flush all pending data if any
-    bw.databases.clean()
-
-    if _DBHasChanged():
-        _clearLCACache()
-
-
-    # List activities with at least one missing value
-    remaining_acts_methods = set(product(acts, methods))-set(_BG_IMPACTS_CACHE)
-    
-    # Keep unique activites
-    remaining_acts = list(set(x[0] for x in remaining_acts_methods))
-
-    if (len(remaining_acts) > 0) :
-        debug("remaining act", remaining_acts, methods)
-        
-        # Some activity belong biosphere and cannot be computed, thus create
-        # a proxy activities to compute them.
-        lca = _multiLCA(
-            [{_ensure_tech_activity_proxy(act, act[0]): 1} for act in remaining_acts],
-            methods)
-
-        # Set output from dataframe
-        for imethod, method in enumerate(methods) :
-            for iact, act in enumerate(remaining_acts) :
-                _BG_IMPACTS_CACHE[(act, method)] = lca.iloc[imethod, iact]
-
-    return _BG_IMPACTS_CACHE
-
-
-
-
-
 def _filter_param_values(params, expanded_param_names) :
     return {key : val for key, val in params.items() if key in expanded_param_names}
+
 
 def _lambdify_expr_to_variable_sequence(expr):
     xid = 0
@@ -444,14 +367,19 @@ class LambdaWithParamNames :
 
     def _repr_latex_(self):
         return self.expr._repr_latex_()
-
-
+    
+    def __call__(self, *args, **kwargs):
+        """Alias for self.compute"""
+        return self.compute(*args, **kwargs)
 
 
 MethodId = Tuple[str, str, str]
 
 
-class get_lambda_for_models_with_methods:
+class _LCALambdaCache:
+    
+    # Store the database status to invalidate cache when needed
+    _database_status = dict()
 
     # Store lambdas (model, method) -> LambdaWithParamNames
     _lambdas_cache = dict()
@@ -461,14 +389,90 @@ class get_lambda_for_models_with_methods:
 
     # Store activity expr
     _actitity_expr = dict()
+    
+    # Store computed LCA for "base" LCA required in expression
+    _background_lca_cache = dict()
+
+    def __new__(cls, *args, **kwargs):
+        raise Exception(f"{cls.__name__} is a namespace and cannot be instanciated")
 
     @classmethod
     def clear_cache(cls):
         cls._lambdas_cache.clear()
         cls._activity_symbols.clear()
         cls._actitity_expr.clear()
+        cls._background_lca_cache.clear()
+        cls._store_db_status()
+        
+    @classmethod
+    def _store_db_status(cls):
+        """Store current database status, i.e. modified and processed timestamp"""
+        for k, v in bw.databases.items():
+            cls._database_status[k] = {
+                'modified': v['modified'],
+                'processed': v['processed']
+            }
+            
+    @classmethod
+    def _database_has_changed(cls):
+        """Check if any change has occured since last update of the cache"""
+        # The set of databases has changed ?
+        if set(bw.databases) != set(cls._database_status):
+            return True
+        # Metadata has changed ?
+        for k0, d0 in cls._database_status.items():
+            d1 = bw.databases[k0]
+            if any(d0[k] != d1[k] for k in d0):
+                return True
 
-    def __new__(cls, models, methods) -> LambdaWithParamNames :
+        return False
+    
+    @classmethod
+    def _ensure_sane_cache(cls):
+        """Invalidate the cache if needed"""
+
+        # Flush all pending data if any
+        bw.databases.clean()
+
+        if cls._database_has_changed():
+            cls.clear_cache()
+        
+    @classmethod
+    def _compute_lca(cls, acts, methods) :
+        """ Compute LCA and return (act, method) => value """
+
+        # List activities with at least one missing value
+        remaining_acts_methods = set(product(acts, methods))-set(cls._background_lca_cache)
+        
+        # Keep unique activites
+        remaining_acts = list(set(x[0] for x in remaining_acts_methods))
+
+        if (len(remaining_acts) > 0) :
+            
+            # Some activity belong biosphere and cannot be computed, thus create
+            # a proxy activities to compute them.
+            
+            bw.calculation_setups['process'] = {
+                'inv': [{_ensure_tech_activity_proxy(act, act[0]): 1} for act in remaining_acts],
+                'ia': methods
+            }
+            
+            debug(f"Compute LCA for {len(remaining_acts)} activities and {len(methods)} methods")
+            lca = bw.MultiLCA('process')
+            
+            # _ensure_tech_activity_proxy may change databases, but it does not 
+            # invalidate the cache, thus store the new state of the database
+            cls._store_db_status()
+            
+            # Set output from dataframe
+            for im, met in enumerate(methods) :
+                for ia, act in enumerate(remaining_acts) :
+                    cls._background_lca_cache[(act, met)] = lca.results[ia, im]
+
+        return copy(cls._background_lca_cache)
+    
+    @classmethod
+    def get_lambda_for_models_with_methods(cls, models, methods) -> LambdaWithParamNames :
         """
         Compile list of models (=activities) and methods (=impacts) to SymPy expression,
         replacing the background activities by the values of the impacts
@@ -477,13 +481,15 @@ class get_lambda_for_models_with_methods:
         :param methods: List of impact methods (tuples)
         :return: dict of (model, method) => LambdaWithParamNames
         """
+        
+        cls._ensure_sane_cache()  
       
         # pre-generate model expression to extract all possible _activity_symbols
         for model in models:
             cls.get_activity_expr(model)
 
         # Compute LCA for all background activities
-        lcas = _multiLCAWithCache(cls._activity_symbols.keys(), methods)
+        lcas = cls._compute_lca(cls._activity_symbols.keys(), methods)
 
         ret = dict()
         for model, method in product(models, methods) :
@@ -614,29 +620,33 @@ class get_lambda_for_models_with_methods:
 
         The expr must appear within the model.
         """
-
-        # Create tech proxys if necessary (for bio flux)
-        acts_by_name = {symbol: (act, act[0]) for act, symbol in cls._activity_symbols.items()}
-
+        
+        # Ensure that all intermediate values are computed
+        cls.get_lambda_for_models_with_methods([model], [method])
+        
         # Compute LCA for all background activities
-        lcas = _multiLCAWithCache(
-            acts_by_name.values(),
-            [method])
+        lcas = cls._compute_lca(cls._activity_symbols.keys(), [method])
+    
+        # Compute the required params
+        lca_parameters = set(expr.free_symbols)-set(cls._activity_symbols.values())
+        expected_names = set(map(str, lca_parameters))
 
-        # Replace activities by their value in expression for this method
-        sub = {symbol: lcas[(act, method)] for symbol, act in cls._activity_symbols.items()}
+        # If we expect an enum param name, we also expect the other ones : enumparam_val1 => enumparam_val1, enumparam_val2, ...
+        expected_names = _expand_param_names(_expanded_names_to_names(expected_names))
 
-        # Loop on models
-        with DbContext(model) :
-            # Compute the required params
-            free_names = {str(symb) for symb in expr.free_symbols}
-            act_names = {str(symb) for symb in symbol_by_act.values()}
-            expected_names = free_names - act_names
+        # Collect impact values for symbols of activities
+        sub = {s: lcas[(a, method)] for a, s in cls._activity_symbols.items()}
 
-            # If we expect an enum param name, we also expect the other ones : enumparam_val1 => enumparam_val1, enumparam_val2, ...
-            expected_names = _expand_param_names(_expanded_names_to_names(expected_names))
+        # Create lambda that replace symbols of activities by their values
+        return LambdaWithParamNames(expr.xreplace(sub), expected_names)
+        
 
-            return LambdaWithParamNames(expr.xreplace(sub), expected_names)
+def get_lambda_for_models_with_methods(*args, **kwargs):
+    return _LCALambdaCache.get_lambda_for_models_with_methods(*args, **kwargs)
+
+
+def lambdify_expr(*args, **kwargs):
+    return _LCALambdaCache.lambdify_expr(*args, **kwargs)
 
 
 def _modelToLambdas(model: ActivityExtended, methods):
@@ -729,6 +739,36 @@ def _filter_params(params, expected_names, model) :
             if model :
                 error("Param %s not required for model %s" % (key, model))
     return res
+
+
+def multiLCAAlgebricRaw(
+        models : Activity,
+        methods,
+        **params):
+    """
+    Main parametric LCIA method : Computes LCA by expressing the foreground model as symbolic expression of background activities and parameters.
+    Then, compute 'static' inventory of the referenced background activities.
+    This enables a very fast recomputation of LCA with different parameters, useful for stochastic evaluation of parametrized model
+
+    Parameters
+    ----------
+    models : List of model
+    methods : List of methods of impact
+    params : You should provide named values of all the parameters declared in the model. \
+             Values can be single value or list of samples, all of the same size
+    """
+ 
+    lambdas_per_model_method = get_lambda_for_models_with_methods(models, methods)
+    param_length = _compute_param_length(params)
+    res = dict()
+    for model, method in product(models, methods):
+        with DbContext(model) :
+            model_n = _actName(model)
+            lambd = lambdas_per_model_method[(model, method)]
+            values = _applyParams(lambd, params)
+            res[(model, method)] = values
+    return res
+
 
 def multiLCAAlgebric(
         models,
