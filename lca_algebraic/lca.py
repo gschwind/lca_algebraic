@@ -271,7 +271,7 @@ def _custom_lambdify(expr, user_functions):
     exec(compile("".join(pass3), 'lamdba.tmp.py', 'exec', optimize=2), g, l)
 
     # Return the generated functions from updated globals
-    return l["foo"]
+    return l["foo"], "".join(pass3)
 
 class LambdaWithParamNames :
     """
@@ -305,7 +305,7 @@ class LambdaWithParamNames :
 
             if LambdaWithParamNames._use_internal_optimization:
                 user_functions = {x[0].name : x[1] for x in _user_functions.values()}
-                self.lambd = _custom_lambdify(self.expr, user_functions)
+                self.lambd, self.code = _custom_lambdify(self.expr, user_functions)
             else:
                 # Sympy regular lambdify
                 self.lambd = lambdify(self.expanded_params, self.expr, modules, printer=printer)
@@ -323,7 +323,7 @@ class LambdaWithParamNames :
 
             if LambdaWithParamNames._use_internal_optimization:
                 user_functions = {x[0].name : x[1] for x in _user_functions.values()}
-                self.lambd = _custom_lambdify(self.expr, user_functions)
+                self.lambd, self.code = _custom_lambdify(self.expr, user_functions)
             else:
                 # Sympy regular lambdify
                 self.lambd = lambdify(expanded_params, self.expr, modules, printer=printer)
