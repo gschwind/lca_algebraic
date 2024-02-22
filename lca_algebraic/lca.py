@@ -169,8 +169,6 @@ def _lambdify_expr_to_variable_sequence(expr):
             value = "({}>{})".format(argn[0],argn[1])
         elif isinstance(expr, sympy.core.numbers.Pi):
             value = "np.pi"
-        elif isinstance(expr, sympy.Max):
-            value = "mymax("+",".join(argn)+")"
         elif isinstance(expr, sympy.ceiling):
             value = "np.ceil("+",".join(argn)+")"
         elif isinstance(expr, sympy.Abs):
