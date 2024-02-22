@@ -645,8 +645,8 @@ def get_lambda_for_models_with_methods(*args, **kwargs):
     return _LCALambdaCache.get_lambda_for_models_with_methods(*args, **kwargs)
 
 
-def lambdify_expr(*args, **kwargs):
-    return _LCALambdaCache.lambdify_expr(*args, **kwargs)
+def lambdify_expr(expr):
+    return LambdaWithParamNames(expr, params=[param.name for param in _param_registry().values()])
 
 
 def _modelToLambdas(model: ActivityExtended, methods):
