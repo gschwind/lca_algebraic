@@ -436,7 +436,7 @@ class _LCALambdaCache:
             cls.clear_cache()
         
     @classmethod
-    def _compute_lca(cls, acts, methods) :
+    def _compute_lca(cls, acts, methods, target_db) :
         """ Compute LCA and return (act, method) => value """
 
         # List activities with at least one missing value
@@ -451,7 +451,7 @@ class _LCALambdaCache:
             # a proxy activities to compute them.
             
             bw.calculation_setups['process'] = {
-                'inv': [{_ensure_tech_activity_proxy(act, act[0]): 1} for act in remaining_acts],
+                'inv': [{_ensure_tech_activity_proxy(act, target_db): 1} for act in remaining_acts],
                 'ia': methods
             }
             
@@ -479,15 +479,15 @@ class _LCALambdaCache:
         :param methods: List of impact methods (tuples)
         :return: dict of (model, method) => LambdaWithParamNames
         """
-        
-        cls._ensure_sane_cache()  
-      
+
+        cls._ensure_sane_cache()
+
         # pre-generate model expression to extract all possible _activity_symbols
         for model in models:
             cls.get_activity_expr(model)
 
         # Compute LCA for all background activities
-        lcas = cls._compute_lca(cls._activity_symbols.keys(), methods)
+        lcas = cls._compute_lca(cls._activity_symbols.keys(), methods, model.key[0])
 
         ret = dict()
         for model, method in product(models, methods) :
@@ -623,7 +623,7 @@ class _LCALambdaCache:
         cls.get_lambda_for_models_with_methods([model], [method])
         
         # Compute LCA for all background activities
-        lcas = cls._compute_lca(cls._activity_symbols.keys(), [method])
+        lcas = cls._compute_lca(cls._activity_symbols.keys(), [method], model.key[0])
     
         # Compute the required params
         lca_parameters = set(expr.free_symbols)-set(cls._activity_symbols.values())
