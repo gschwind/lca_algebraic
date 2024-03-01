@@ -411,13 +411,7 @@ class LambdaWithParamNames :
 
         # Check and expand enum params, add default values
         res = _completeParamValues(params, self.params)
-
-        # Expand single params and transform them to np.array
-        for key in res.keys():
-            val = res[key]
-            if not isinstance(val, list):
-                val = list([val] * param_length)
-            res[key] = np.array(val, float)
+        res = _ensure_numpy_arrays(res)
         return res
 
     def compute(self, **params):
@@ -470,15 +464,25 @@ def method_name(method):
 def _slugify(str) :
     return re.sub('[^0-9a-zA-Z]+', '_', str)
 
-def _compute_param_length(params) :
+def _ensure_numpy_arrays(params: dict):
+    # TODO: include in parameters specifications the expected type, currently they are float
+    """Convert all parameters as array, raise error if some parameters cannot be converted"""
+    return {k: np.asarray(v) for k, v in params.items()}
+
+def _compute_param_length(params: dict) :
+    """Expect dictionnary of numpy array"""
     # Check length of parameter values
     param_length = 1
     for key, val in params.items():
-        if isinstance(val, list):
-            if param_length == 1:
-                param_length = len(val)
-            elif param_length != len(val):
-                raise Exception("Parameters should be a single value or a list of same number of values")
+        # Check if it is scalar
+        if len(val.shape) == 0:
+            continue
+        if len(val.shape) != 1:
+            raise Exception(f"Parameter '{key}' has wrong ndims ({len(val.shape)}), expected 0 or 1")
+        if param_length == 1:
+            param_length = val.shape[0]
+        elif param_length != val.shape[0]:
+            raise Exception("Parameters should be a single value or a list of same number of values")
     return param_length
 
 def _postMultiLCAAlgebric(methods, lambdas, alpha=1, **params):
@@ -492,6 +496,7 @@ def _postMultiLCAAlgebric(methods, lambdas, alpha=1, **params):
         **params : Parameters of the model
     '''
 
+    params = _ensure_numpy_arrays(params)
     param_length = _compute_param_length(params)
 
     # Init output
