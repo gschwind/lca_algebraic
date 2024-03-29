@@ -121,6 +121,7 @@ def _DBHasChanged():
 
     # The set of databases has changed ?
     if set(bw.databases) != set(_BG_IMPACTS_CACHE_DB_STATUS):
+        debug("_DBHasChanged: Database set has changed")
         return True
 
     # Metadata has changed ?
@@ -128,11 +129,13 @@ def _DBHasChanged():
         d1 = bw.databases[k0]
         for k in d0:
             if d0[k] != d1[k]:
+                debug(f"_DBHasChanged: {k} {d0[k]}!={d1[k]}")
                 return True
 
     return False
 
 def _clearLCACache() :
+    debug("Clear LCA Cache")
     _storeDBStatus()
     _BG_IMPACTS_CACHE.clear()
 
