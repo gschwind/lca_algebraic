@@ -356,6 +356,7 @@ class LambdaWithParamNames :
     This class represents a compiled (lambdified) expression together with the list of requirement parameters and the source expression
     """
     _use_internal_optimization = False
+    _use_sympy_cse = False
 
     def __init__(self, exprOrDict, expanded_params=None, params=None, sobols=None):
         """ Computes a lamdda function from expression and list of expected parameters.
@@ -386,7 +387,7 @@ class LambdaWithParamNames :
                 self.lambd = _custom_lambdify(self.expr, user_functions)
             else:
                 # Sympy regular lambdify
-                self.lambd = lambdify(self.expanded_params, self.expr, modules, printer=printer)
+                self.lambd = lambdify(self.expanded_params, self.expr, modules, printer=printer, cse=LambdaWithParamNames._use_sympy_cse)
 
             self.sobols = obj["sobols"]
 
@@ -404,7 +405,7 @@ class LambdaWithParamNames :
                 self.lambd = _custom_lambdify(self.expr, user_functions)
             else:
                 # Sympy regular lambdify
-                self.lambd = lambdify(expanded_params, self.expr, modules, printer=printer)
+                self.lambd = lambdify(expanded_params, self.expr, modules, printer=printer, cse=LambdaWithParamNames._use_sympy_cse)
 
             self.expanded_params = expanded_params
             self.sobols = sobols
@@ -427,6 +428,10 @@ class LambdaWithParamNames :
     @staticmethod
     def use_internal_optimization(b = True):
         LambdaWithParamNames._use_internal_optimization = b
+
+    @staticmethod
+    def use_sympy_cse(b = True):
+        LambdaWithParamNames._use_sympy_cse = b
 
     def serialize(self) :
         return dict(
