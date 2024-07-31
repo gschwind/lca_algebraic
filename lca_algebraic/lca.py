@@ -483,6 +483,8 @@ def _compute_param_length(params: dict) :
     # Check length of parameter values
     param_length = 1
     for key, val in params.items():
+        if isinstance(val, list):
+            val = np.array(val)
         # Check if it is scalar
         if len(val.shape) == 0:
             continue

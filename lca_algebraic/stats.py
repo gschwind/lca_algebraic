@@ -758,7 +758,7 @@ def sobol_simplify_model(
         expr = _replace_fixed_params(expr, extraFixedParams, fixed_mode=fixed_mode)
 
         # Sympy simplification
-        expr = simplify(expr)
+        #expr = simplify(expr)
 
         # Round numerical values to 3 digits
         expr = _round_expr(expr, num_digits)
@@ -778,7 +778,7 @@ def sobol_simplify_model(
             expr = _simplify_products(expr, expanded_params)
 
 
-        expr = simplify(expr)
+        #expr = simplify(expr)
 
         display(prettify(expr))
 
