@@ -813,6 +813,7 @@ def sobol_simplify_model(
     num_digits=3,
     simple_sums=True,
     simple_products=True,
+    simplify_func=simplify,
 ) -> List[LambdaWithParamNames]:
     """
     Computes Sobol indices and selects main parameters for explaining sensibility of at least 'min_ratio',
@@ -927,7 +928,7 @@ def sobol_simplify_model(
         expr = _replace_fixed_params(expr, fixed_params, fixed_mode=fixed_mode)
 
         # Sympy simplification
-        expr = simplify(expr)
+        expr = simplify_func(expr)
 
         # Round numerical values to 3 digits
         expr = _round_expr(expr, num_digits)
@@ -946,7 +947,7 @@ def sobol_simplify_model(
         if simple_products:
             expr = _simplify_products(expr, expanded_params)
 
-        expr = simplify(expr)
+        expr = simplify_func(expr)
 
         display(prettify(expr))
 
