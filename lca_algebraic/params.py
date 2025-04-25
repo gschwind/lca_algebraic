@@ -1131,8 +1131,9 @@ def list_parameters(name_type=NameType.NAME, as_dataframe=False):
 
 def compute_expr_value(expr: Expr, param_values: Dict):
     """Compute value of an expression for given set of parameter values"""
+    from .lca import _lambdify
     free_symbols = [str(symbol) for symbol in expr.free_symbols]
-    lambd = lambdify(free_symbols, expr)
+    lambd = _lambdify(expr, free_symbols)
 
     required_params = _expanded_names_to_names(free_symbols)
 
@@ -1173,11 +1174,9 @@ def freezeParams(db_name, **params: Dict[str, float]):
         for act in db:
             for exc in act.exchanges():
                 amount = _getAmountOrFormula(exc)
-
                 # Amount is a formula ?
                 if isinstance(amount, Expr):
                     val = compute_expr_value(amount, params)
-
                     with ExceptionContext(val):
                         val = float(val)
 
