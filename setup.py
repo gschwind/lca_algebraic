@@ -41,26 +41,26 @@ name = "lca_algebraic"
 if platform.processor() == "x86_64":
     REQUIREMENTS.append(PYPARDISO)
 
-# Try to get branch from git
-try:
-    branches = run(["git", "branch"])
-    curr_branch = next(line for line in branches if "*" in line)
-    curr_branch = curr_branch.replace(" ", "").replace("*", "")
-
-    if curr_branch != "main":
-        name += "_dev"
-
-        # commit = run(["git", "log"])[0].split()[1][0:8]
-
-        start = datetime.strptime("2021-01-01", "%Y-%m-%d")
-        now = datetime.now()
-
-        min_diff = int((now - start).total_seconds() // 60)
-
-        version += "." + str(min_diff) + "_dev"
-
-except Exception as e:
-    print("Failed to get git branch. Might be in TOX ?.", e)
+## Try to get branch from git
+#try:
+#    branches = run(["git", "branch"])
+#    curr_branch = next(line for line in branches if "*" in line)
+#    curr_branch = curr_branch.replace(" ", "").replace("*", "")
+#
+#    if curr_branch != "main":
+#        name += "_dev"
+#
+#        # commit = run(["git", "log"])[0].split()[1][0:8]
+#
+#        start = datetime.strptime("2021-01-01", "%Y-%m-%d")
+#        now = datetime.now()
+#
+#        min_diff = int((now - start).total_seconds() // 60)
+#
+#        version += "." + str(min_diff) + "_dev"
+#
+#except Exception as e:
+#    print("Failed to get git branch. Might be in TOX ?.", e)
 
 setup(
     name=name,
