@@ -7,6 +7,7 @@ from lca_algebraic.units import *
 from lca_algebraic import Settings, newFloatParam, newActivity, copyActivity, compute_impacts, interpolate_activities
 from test.conftest import USER_DB
 
+import sympy
 
 @pytest.fixture(scope="module", autouse=True)
 def enable_units():
@@ -35,6 +36,22 @@ def test_new_separate_units():
 
     assert 2 * u.kwp + 3 * u.kwp == 5 * u.kwp
 
+
+def test_sympy_interaction_0():
+    # Set the unit the lca_algebraic way
+    sympy.Float(1.0) | u.kg
+
+def test_sympy_interaction_1():
+    # Set the unit the pint way
+    sympy.Float(1.0) * u.kg
+
+def test_sympy_interaction_2():
+    # Set the unit the pint way
+    u.kg * sympy.Float(1.0)
+
+def test_sympy_interaction_3():
+    # Mixed way
+    sympy.Float(1.0) * (1 | u.kg)
 
 def test_new_alias_unit():
     define_alias_unit("tkm", u.ton * u.km)
