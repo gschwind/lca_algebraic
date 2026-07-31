@@ -133,13 +133,31 @@ class ParamDef(Symbol):
     Don't instantiate it directly. Use the function **newXXXParam() instead.
     """
 
-    def __new__(cls, name, *karg, **kargs):
-        # We use dbname as an "assumption" so that two symbols with same name are not equal if from separate DBs
-        assumptions = dict()
-        assumptions["real"] = True
+    def __new__(cls, name, *args, **kwargs):
 
-        if "dbname" in kargs and kargs["dbname"]:
-            assumptions[kargs["dbname"]] = True
+        # list of documented assumptions here:
+        # https://docs.sympy.org/latest/guides/assumptions.html#predicates
+        valid_assumptions = {
+            'algebraic', 'commutative', 'complex', 'extended_negative',
+            'extended_nonnegative', 'extended_nonpositive', 'extended_nonzero',
+            'extended_positive', 'extended_real', 'finite', 'hermitian',
+            'imaginary', 'infinite', 'integer', 'irrational', 'negative',
+            'noninteger', 'nonnegative', 'nonpositive', 'nonzero', 'positive',
+            'rational', 'real', 'transcendental', 'zero'
+        }
+
+        # filter args keeping only valid assumptions
+        user_assumptions = {k: v for k, v in kwargs.items() if k in valid_assumptions}
+
+        # Select user assumptions if provided
+        if len(user_assumptions) != 0:
+            assumptions = user_assumptions
+        else:
+            assumptions = {"real": True}
+
+        # To avoid name collision we add a dbname assumption
+        if (dbname := kwargs.get("dbname", None)) is not None:
+            assumptions[dbname] = True
 
         return Symbol.__new__(cls, name, **assumptions)
 
